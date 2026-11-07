@@ -1,0 +1,94 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwnerEmail() {
+      return isSignedIn() && request.auth.token.email == 'pandeyakash09307@gmail.com';
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function hasUserDoc() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isOwner() {
+      return isOwnerEmail() || (hasUserDoc() && getUserData().role == 'owner');
+    }
+
+    function isClient() {
+      return hasUserDoc() && getUserData().role == 'client';
+    }
+
+    function isStaff() {
+      return isOwner() || isClient();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner() || (isSignedIn() && request.auth.uid == userId && (
+        !('role' in request.resource.data) || request.resource.data.role == 'viewer'
+      ));
+      allow update: if isOwner() || (isSignedIn() && request.auth.uid == userId && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])
+      ));
+      allow delete: if isOwner();
+    }
+
+    // Settings (Coaching poster, logo, UPI ID - Public read for student portal)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Students collection (Public read for parent search portal)
+    match /students/{studentId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Batches collection
+    match /batches/{batchId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Fees collection
+    match /fees/{feeId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Attendance collection
+    match /attendance/{attendanceId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Tests collection
+    match /tests/{testId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Enquiries / Referral collection (Parents can submit new admission enquiries)
+    match /enquiries/{enquiryId} {
+      allow read: if isStaff();
+      allow create: if true;
+      allow update, delete: if isStaff();
+    }
+  }
+}
